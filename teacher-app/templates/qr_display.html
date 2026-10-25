@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QR Code - Attendance</title>
+    <!-- Attempt to load Socket.io from CDN; app continues working offline even if this fails -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #1a1a2e;
+            color: #fff;
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            overflow: hidden;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 24px;
+        }
+        .header h1 { font-size: 2.2rem; color: #e0e0ff; letter-spacing: 0.5px; }
+        .header .session-info {
+            font-size: 1.15rem;
+            color: #7986cb;
+            margin-top: 8px;
+            font-weight: 500;
+        }
+        .qr-container {
+            background: #fff;
+            border-radius: 24px;
+            padding: 28px;
+            box-shadow: 0 0 60px rgba(100, 100, 255, 0.25);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 380px;
+            min-height: 380px;
+        }
+        .qr-container img {
+            display: block;
+            width: 380px;
+            height: 380px;
+            image-rendering: pixelated;
+        }
+        .timer-bar {
+            width: 436px;
+            height: 8px;
+            background: #2a2d45;
+            border-radius: 4px;
+            margin-top: 20px;
+            overflow: hidden;
+        }
+        .timer-bar .fill {
+            height: 100%;
+            background: linear-gradient(90deg, #4fc3f7, #00e676);
+            border-radius: 4px;
+            width: 100%;
+            transition: width 0.1s linear;
+        }
+        .footer {
+            margin-top: 24px;
+            text-align: center;
+            color: #9fa8da;
+            font-size: 0.95rem;
+        }
+        .badge {
+            display: inline-block;
+            margin-top: 10px;
+            padding: 4px 14px;
+            border-radius: 20px;
+            background: rgba(76, 175, 80, 0.2);
+            color: #81c784;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+        .no-session {
+            text-align: center;
+            background: #16182c;
+            border: 1px solid #2a2d45;
+            padding: 40px;
+            border-radius: 16px;
+            max-width: 450px;
+        }
+        .no-session h2 { color: #ffca28; margin-bottom: 12px; font-size: 1.6rem; }
+        .no-session p { color: #b0bec5; font-size: 1rem; line-height: 1.5; margin-bottom: 20px; }
+        .btn {
+            display: inline-block;
+            background: #4f8cff;
+            color: #fff;
+            text-decoration: none;
+            padding: 10px 24px;
+            border-radius: 8px;
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+    <div id="qr-page">
+        <div class="header">
+            <h1>📚 Scan to Mark Attendance</h1>
+            <div class="session-info" id="session-info">Loading active session...</div>
+        </div>
+        <div class="qr-container">
+            <img id="qr-image" src="" alt="Loading QR code...">
+        </div>
+        <div class="timer-bar">
+            <div class="fill" id="timer-fill"></div>
+        </div>
+        <div class="footer">
+            <div>QR code rotates every 5 seconds. Connect to classroom Wi-Fi and scan.</div>
+            <div class="badge" id="live-indicator">🟢 Dynamic Live Feed</div>
+        </div>
+    </div>
+
+    <div id="no-session-page" style="display:none;">
+        <div class="no-session">
+            <h2>⚠️ No Active Session</h2>
+            <p>You need to start an attendance session from the teacher dashboard before displaying the QR code.</p>
+            <a href="/" class="btn">Go to Dashboard</a>
+        </div>
+    </div>
+
+    <script>
+        const qrImage = document.getElementById('qr-image');
+        const timerFill = document.getElementById('timer-fill');
+        const sessionInfo = document.getElementById('session-info');
+        const qrPage = document.getElementById('qr-page');
+        const noSessionPage = document.getElementById('no-session-page');
+
+        let intervalSec = 5;
+        let lastFetchTime = Date.now();
+        let animationFrameId = null;
+
+        function updateTimerBar() {
+            const elapsed = (Date.now() - lastFetchTime) / 1000;
+            const remaining = Math.max(0, intervalSec - elapsed);
+            const percent = (remaining / intervalSec) * 100;
+            timerFill.style.width = percent + '%';
+            animationFrameId = requestAnimationFrame(updateTimerBar);
+        }
+
+        async function fetchLatestQR() {
+            try {
+                const res = await fetch('/api/qr/current?t=' + Date.now());
+                if (!res.ok) {
+                    if (res.status === 404) {
+                        qrPage.style.display = 'none';
+                        noSessionPage.style.display = 'block';
+                    }
+                    return;
+                }
+                const data = await res.json();
+                if (data.active && data.image) {
+                    qrPage.style.display = 'block';
+                    noSessionPage.style.display = 'none';
+                    qrImage.src = 'data:image/png;base64,' + data.image;
+                    sessionInfo.textContent = `${data.subject} | Room: ${data.room_number} | Session ID: ${data.session_id}`;
+                    intervalSec = data.interval || 5;
+                    lastFetchTime = Date.now();
+                } else {
+                    qrPage.style.display = 'none';
+                    noSessionPage.style.display = 'block';
+                }
+            } catch (err) {
+                console.warn('HTTP QR fetch failed:', err);
+            }
+        }
+
+        // 1. Initial immediate fetch (independent of WebSocket)
+        fetchLatestQR();
+        updateTimerBar();
+
+        // 2. Continuous fallback polling (every 4.5 seconds)
+        setInterval(fetchLatestQR, 4500);
+
+        // 3. If Socket.io is available, also use real-time push
+        if (typeof io !== 'undefined') {
+            try {
+                const socket = io();
+                socket.on('connect', () => {
+                    socket.emit('start_qr_stream');
+                });
+                socket.on('qr_update', (data) => {
+                    if (data && data.image) {
+                        qrImage.src = 'data:image/png;base64,' + data.image;
+                        lastFetchTime = Date.now();
+                    }
+                });
+            } catch (e) {
+                console.warn('SocketIO initialization skipped:', e);
+            }
+        }
+    </script>
+</body>
+</html>

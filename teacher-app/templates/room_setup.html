@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}Room Setup - Attendance System{% endblock %}
+
+{% block content %}
+<div class="dashboard">
+    <section class="card">
+        <h2>🏫 Room & Wi-Fi BSSID Setup</h2>
+        <p style="color:#888; margin-bottom:16px;">Add classroom rooms and their Wi-Fi router BSSID addresses for verification.</p>
+
+        <!-- Add Room Form -->
+        <form id="add-room-form" class="session-form" style="margin-bottom: 24px;">
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="new-room">Room Number</label>
+                    <input type="text" id="new-room" placeholder="e.g. R201" required>
+                </div>
+                <div class="form-group" style="flex:2">
+                    <label for="new-bssids">BSSIDs (comma-separated)</label>
+                    <input type="text" id="new-bssids" placeholder="AA:BB:CC:DD:EE:FF, 11:22:33:44:55:66" required>
+                </div>
+            </div>
+            <button type="submit" class="btn btn-primary">+ Add Room</button>
+        </form>
+
+        <!-- Rooms List -->
+        <div id="rooms-list" class="list">
+            <p class="empty-msg">Loading rooms...</p>
+        </div>
+    </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const roomsList = document.getElementById('rooms-list');
+
+    async function loadRooms() {
+        const res = await fetch('/api/rooms');
+        const data = await res.json();
+
+        if (data.rooms.length === 0) {
+            roomsList.innerHTML = '<p class="empty-msg">No rooms configured yet.</p>';
+            return;
+        }
+
+        roomsList.innerHTML = data.rooms.map(room => `
+            <div class="list-item">
+                <div class="item-info">
+                    <strong>🏫 ${room.room_number}</strong>
+                    <span class="item-detail">BSSIDs: ${room.bssid_whitelist.join(', ') || 'None'}</span>
+                </div>
+                <div class="item-actions">
+                    <button class="btn btn-sm btn-danger" onclick="deleteRoom('${room.room_number}')">🗑 Delete</button>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    document.getElementById('add-room-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const room_number = document.getElementById('new-room').value.trim();
+        const bssids = document.getElementById('new-bssids').value.split(',').map(b => b.trim()).filter(b => b);
+
+        const res = await fetch('/api/rooms', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ room_number, bssid_whitelist: bssids })
+        });
+        const data = await res.json();
+        if (data.error) {
+            alert(data.error);
+        } else {
+            document.getElementById('new-room').value = '';
+            document.getElementById('new-bssids').value = '';
+            loadRooms();
+        }
+    });
+
+    async function deleteRoom(room_number) {
+        if (!confirm(`Delete room "${room_number}" and its past session history?`)) return;
+        try {
+            const res = await fetch(`/api/rooms/${encodeURIComponent(room_number)}`, { method: 'DELETE' });
+            const data = await res.json();
+            if (!res.ok || data.error) {
+                alert(data.error || 'Failed to delete room');
+            } else {
+                loadRooms();
+            }
+        } catch (e) {
+            alert('Error communicating with server: ' + e.message);
+        }
+    }
+
+    loadRooms();
+</script>
+{% endblock %}

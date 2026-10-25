@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - Attendance System{% endblock %}
+
+{% block content %}
+<div class="dashboard">
+    <!-- Session Control -->
+    <section class="card session-card">
+        <h2>📋 Session Control</h2>
+        <div id="session-status" class="session-status">
+            <span class="badge badge-inactive">No Active Session</span>
+        </div>
+        <form id="start-session-form" class="session-form">
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="subject">Subject</label>
+                    <input type="text" id="subject" placeholder="e.g. Math 101" required>
+                </div>
+                <div class="form-group">
+                    <label for="room">Room</label>
+                    <select id="room" required>
+                        <option value="">Select Room...</option>
+                    </select>
+                </div>
+            </div>
+            <div class="btn-row">
+                <button type="submit" id="btn-start" class="btn btn-primary">▶ Start Session</button>
+                <button type="button" id="btn-stop" class="btn btn-danger" disabled>⏹ Stop Session</button>
+            </div>
+        </form>
+    </section>
+
+    <!-- Attendance Stats -->
+    <section class="card stats-card">
+        <h2>📊 Live Attendance</h2>
+        <div class="stats-grid">
+            <div class="stat">
+                <div class="stat-number" id="stat-present">0</div>
+                <div class="stat-label">Present</div>
+            </div>
+            <div class="stat">
+                <div class="stat-number" id="stat-pending">0</div>
+                <div class="stat-label">In Progress</div>
+            </div>
+            <div class="stat">
+                <div class="stat-number" id="stat-manual">0</div>
+                <div class="stat-label">Manual Requests</div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Manual Requests -->
+    <section class="card" id="manual-section">
+        <h2>🙋 Pending Manual Requests</h2>
+        <div id="manual-requests-list" class="list">
+            <p class="empty-msg">No pending requests.</p>
+        </div>
+    </section>
+
+    <!-- Attendance List -->
+    <section class="card">
+        <h2>📋 Attendance List</h2>
+        <div id="attendance-list" class="list">
+            <p class="empty-msg">Start a session to see attendance.</p>
+        </div>
+    </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+{% endblock %}
