@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -9,12 +8,16 @@ import 'verification_screen.dart';
 
 /// Full-screen QR code scanner screen.
 ///
-/// NOTE: mobile_scanner does not request the camera permission itself.
-/// Declaring CAMERA in AndroidManifest.xml is not enough on Android 6+ —
-/// the permission must also be granted at runtime. If the scanner is shown
-/// without it, the camera never starts and the screen stays black, with no
-/// error shown. So this screen only starts the camera after confirming the
-/// permission, and shows a recovery UI (grant / app settings) otherwise.
+/// Camera permission must be granted at runtime on Android 6+ — the CAMERA
+/// entry in AndroidManifest.xml alone is not enough, and mobile_scanner does
+/// not prompt for it. This screen therefore only shows the scanner after the
+/// permission is confirmed, and shows a recovery UI otherwise.
+///
+/// The scanner deliberately uses mobile_scanner's default auto-start: calling
+/// `controller.start()` manually can race the widget attaching to the
+/// controller and leave it stuck in an error state (just a "!" icon with no
+/// way back). Instead, any start failure is surfaced through [errorBuilder]
+/// with the real error code and a Retry button.
 class ScanQrScreen extends StatefulWidget {
   const ScanQrScreen({super.key});
 
@@ -23,12 +26,9 @@ class ScanQrScreen extends StatefulWidget {
 }
 
 class _ScanQrScreenState extends State<ScanQrScreen> {
-  // autoStart: false so the camera is only started once we know the
-  // camera permission is granted (see _startCamera).
   final MobileScannerController _controller = MobileScannerController(
     detectionSpeed: DetectionSpeed.normal,
     facing: CameraFacing.back,
-    autoStart: false,
   );
   bool _scanned = false;
   bool _cameraReady = false;
@@ -37,12 +37,12 @@ class _ScanQrScreenState extends State<ScanQrScreen> {
   @override
   void initState() {
     super.initState();
-    _startCamera();
+    _checkCameraPermission();
   }
 
-  /// Request the camera permission if needed, then start the camera.
-  /// If permission is refused, show a recovery UI instead of a black screen.
-  Future<void> _startCamera() async {
+  /// Confirm the camera permission before showing the scanner.
+  /// If refused, show a recovery UI instead of a dead camera view.
+  Future<void> _checkCameraPermission() async {
     var status = await Permission.camera.status;
     if (status.isDenied) {
       status = await Permission.camera.request();
@@ -54,15 +54,22 @@ class _ScanQrScreenState extends State<ScanQrScreen> {
         _permissionDenied = false;
         _cameraReady = true;
       });
-      // Start only after the MobileScanner widget is in the tree.
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _controller.start();
-      });
     } else {
       // Denied or permanently denied: the system will not prompt again
       // for a permanently denied permission, so the user must enable it
       // in app settings (offered by the fallback UI below).
       setState(() => _permissionDenied = true);
+    }
+  }
+
+  /// Retry starting the camera after a start failure (e.g. the camera was
+  /// busy or the controller failed to attach on the first attempt).
+  Future<void> _retryCamera() async {
+    try {
+      await _controller.stop();
+      await _controller.start();
+    } on MobileScannerException {
+      // The errorBuilder below will show the new error state.
     }
   }
 
@@ -119,6 +126,47 @@ class _ScanQrScreenState extends State<ScanQrScreen> {
                     MobileScanner(
                       controller: _controller,
                       onDetect: _onDetect,
+                      // Never leave the user staring at the default "!"
+                      // error icon: show what failed and offer a retry.
+                      errorBuilder: (context, error, child) {
+                        final isPermission = error.errorCode ==
+                            MobileScannerErrorCode.permissionDenied;
+                        return Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(32),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.error_outline,
+                                    size: 64, color: Colors.grey),
+                                const SizedBox(height: 16),
+                                Text(
+                                  isPermission
+                                      ? 'Camera permission was denied.'
+                                      : 'Camera could not be started '
+                                          '(${error.errorCode}).',
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                      color: Colors.white, fontSize: 16),
+                                ),
+                                const SizedBox(height: 24),
+                                ElevatedButton(
+                                  onPressed: _retryCamera,
+                                  child: const Text('Retry Camera'),
+                                ),
+                                if (isPermission) ...[
+                                  const SizedBox(height: 12),
+                                  TextButton(
+                                    onPressed: openAppSettings,
+                                    child:
+                                        const Text('Open App Settings'),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                        );
+                      },
                     ),
 
                     // Overlay
@@ -191,7 +239,7 @@ class _ScanQrScreenState extends State<ScanQrScreen> {
             ),
             const SizedBox(height: 24),
             ElevatedButton(
-              onPressed: _startCamera,
+              onPressed: _checkCameraPermission,
               child: const Text('Grant Camera Permission'),
             ),
             const SizedBox(height: 12),
