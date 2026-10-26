@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import '../providers/attendance_provider.dart';
 import '../services/storage_service.dart';
@@ -121,13 +122,46 @@ class _HomeScreenState extends State<HomeScreen> {
                 width: double.infinity,
                 height: 64,
                 child: ElevatedButton.icon(
-                  onPressed: () {
-                    // Reset provider state and navigate to scanner
-                    context.read<AttendanceProvider>().reset();
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                          builder: (_) => const ScanQrScreen()),
-                    );
+                  onPressed: () async {
+                    // Ask for the camera permission BEFORE opening the
+                    // scanner. The CAMERA entry in AndroidManifest.xml alone
+                    // does not grant it on Android 6+, and mobile_scanner
+                    // will not prompt for it — without this step the camera
+                    // never starts and the scanner shows a black screen.
+                    final status = await Permission.camera.request();
+                    if (!context.mounted) return;
+
+                    if (status.isGranted) {
+                      // Reset provider state and navigate to scanner
+                      context.read<AttendanceProvider>().reset();
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                            builder: (_) => const ScanQrScreen()),
+                      );
+                    } else if (status.isPermanentlyDenied) {
+                      // The system won't show the prompt again; the user
+                      // must enable the camera in app settings.
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: const Text(
+                            'Camera permission is needed to scan the QR code. '
+                            'Enable it in app settings.',
+                          ),
+                          action: SnackBarAction(
+                            label: 'Settings',
+                            onPressed: openAppSettings,
+                          ),
+                        ),
+                      );
+                    } else {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                            'Camera permission is needed to scan the QR code.',
+                          ),
+                        ),
+                      );
+                    }
                   },
                   icon: const Icon(Icons.qr_code_scanner, size: 28),
                   label: const Text(
